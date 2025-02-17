@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // or "mysql" or "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id            String   @id @default(uuid())
+  content       String
+  platforms     String[] // Prisma will handle array storage
+  mediaUrl      String?
+  status        String   @default("pending")
+  scheduledDate DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PlatformCredential {
+  id            String   @id @default(uuid())
+  platform      String
+  accessToken   String
+  refreshToken  String?
+  expiresAt     DateTime?
+  userId        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+} 
