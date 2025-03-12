@@ -26,4 +26,8 @@ export class CreatePostDto {
   @IsOptional()
   @IsDateString()
   scheduledDate?: string;
+
+  @ApiProperty({ description: 'User ID creating the post' })
+  @IsString()
+  userId: string;
 } 
