@@ -58,8 +58,6 @@ export class SocialController {
   async deletePost(@Param('id') id: string) {
     return this.socialService.deletePost(id);
   }
-}
-
   // Keep the platform credential endpoints as they are:
   @Post('platform/credential')
   @ApiOperation({ 
@@ -74,6 +72,7 @@ export class SocialController {
     status: 400, 
     description: 'Invalid platform or missing required fields' 
   })
-  async addPlatformCredential(@Body() credentialDto: AddPlatformCredentialDto) {
+  async addPlatformCredentials(@Body() credentialDto: AddPlatformCredentialDto) {
     return this.socialService.addPlatformCredential(credentialDto);
   }
+}

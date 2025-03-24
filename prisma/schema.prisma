@@ -19,16 +19,17 @@ model User {
 }
 
 model Post {
-  id            String   @id @default(uuid())
-  content       String
-  platforms     String[]
-  mediaUrl      String?
-  status        String   @default("pending")
-  scheduledDate DateTime?
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(uuid())
+  content         String
+  platforms       String[]
+  mediaUrl        String?
+  scheduledDate   DateTime?
+  status          String   @default("pending")
+  platformPostIds Json?    // Store platform-specific post IDs
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model PlatformCredential {

@@ -81,12 +81,21 @@ export class PlatformService {
     });
 
     try {
-      const response = await client.v2.tweet('Hello, Twitter API!');
-      console.log('Tweet posted:', response);
+      const response = await client.v2.tweet(content);
+      this.logger.debug('Tweet posted:', response);
+      
+      // Return structured response with platform-specific ID
+      return {
+        success: true,
+        platformPostId: response.data.id,
+        data: response.data
+      };
     } catch (error) {
-      console.error('Error posting tweet:', error);
+      this.logger.error('Error posting tweet:', error);
+      throw error;
     }
-}
+  }
+
 
   private async postToLinkedIn(content: string, credentials: any, mediaUrl?: string) {
     const url = 'https://api.linkedin.com/v2/ugcPosts';
@@ -299,8 +308,17 @@ export class PlatformService {
     try {
       // Note: Twitter API v2 doesn't support updating tweets
       // We'll need to delete and create a new one
-      await client.v2.delete(postId);
-      return await client.v2.tweet(content);
+      const deleteResult = await client.v2.deleteTweet(postId);
+      this.logger.debug('Tweet deleted:', deleteResult);
+      
+      const newTweet = await client.v2.tweet(content);
+      this.logger.debug('New tweet created:', newTweet);
+      
+      return {
+        success: true,
+        platformPostId: newTweet.data.id,
+        data: newTweet.data
+      };
     } catch (error) {
       this.logger.error('Error updating tweet:', error);
       throw error;
@@ -315,6 +333,13 @@ export class PlatformService {
       accessSecret: credentials.tokenSecret,
     });
 
-    return client.v2.delete(postId);
+    try {
+      const result = await client.v2.deleteTweet(postId);
+      this.logger.debug('Tweet deletion result:', result);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error deleting tweet ${postId}:`, error);
+      throw error;
+    }
   }
 }

@@ -41,17 +41,27 @@ export class SocialService {
 
   private async publishPost(post: any) {
     try {
+      const platformPostIds = {};
+      
       for (const platform of post.platforms) {
-        await this.platformService.postToPlatform(
+        const response = await this.platformService.postToPlatform(
           platform as Platform,
           post.content,
           post.mediaUrl
         );
+        
+        // Store the platform-specific post ID if available
+        if (response && 'platformPostId' in response) {
+          platformPostIds[platform] = response.platformPostId;
+        }
       }
 
       await this.prisma.post.update({
         where: { id: post.id },
-        data: { status: 'published' }
+        data: { 
+          status: 'published',
+          platformPostIds: JSON.stringify(platformPostIds)
+        }
       });
     } catch (error) {
       this.logger.error(`Failed to publish post ${post.id}: ${JSON.stringify(error.message)}`);
@@ -127,63 +137,79 @@ export class SocialService {
 
   async updatePost(id: string, updatePostDto: UpdatePostDto) {
     const post = await this.prisma.post.findUnique({
-      where: { id },
-      include: { user: true }
+      where: { id }
     });
 
     if (!post) {
       throw new NotFoundException(`Post with ID ${id} not found`);
     }
 
-    try {
-      for (const platform of post.platforms) {
-        await this.platformService.updatePost(
-          platform as Platform,
-          post.id, // Using post.id as identifier instead of platformPostIds
-          updatePostDto.content,
-          updatePostDto.mediaUrl
-        );
-      }
+    // Update the post in the database
+    const updatedPost = await this.prisma.post.update({
+      where: { id },
+      data: {
+        content: updatePostDto.content,
+        mediaUrl: updatePostDto.mediaUrl,
+        status: 'updated'
+      },
+      include: { user: true }
+    });
 
-      return this.prisma.post.update({
-        where: { id },
-        data: {
-          content: updatePostDto.content,
-          mediaUrl: updatePostDto.mediaUrl,
-          status: 'updated'
-        },
-        include: { user: true }
-      });
-    } catch (error) {
-      this.logger.error(`Failed to update post ${id}: ${error.message}`);
-      throw error;
+    // If the post is published and has platform-specific IDs, update on platforms
+    if (post.status === 'published' && post.platformPostIds) {
+      try {
+        const platformPostIds = JSON.parse(post.platformPostIds as string);
+        
+        for (const platform of post.platforms) {
+          if (platformPostIds[platform]) {
+            await this.platformService.updatePost(
+              platform as Platform,
+              platformPostIds[platform], // Use platform-specific post ID
+              updatePostDto.content,
+              updatePostDto.mediaUrl
+            );
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Failed to update published post ${id} on platforms: ${error.message}`);
+        // Continue with the database update even if platform updates fail
+      }
     }
+
+    return updatedPost;
   }
 
   async deletePost(id: string) {
     const post = await this.prisma.post.findUnique({
-      where: { id },
-      include: { user: true }
+      where: { id }
     });
 
     if (!post) {
       throw new NotFoundException(`Post with ID ${id} not found`);
     }
 
-    try {
-      for (const platform of post.platforms) {
-        await this.platformService.deletePost(
-          platform as Platform,
-          post.id // Using post.id as identifier instead of platformPostIds
-        );
+    // If the post is published and has platform-specific IDs, delete from platforms
+    if (post.status === 'published' && post.platformPostIds) {
+      try {
+        const platformPostIds = JSON.parse(post.platformPostIds as string);
+        
+        for (const platform of post.platforms) {
+          if (platformPostIds[platform]) {
+            await this.platformService.deletePost(
+              platform as Platform,
+              platformPostIds[platform] // Use platform-specific post ID
+            );
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Failed to delete published post ${id} from platforms: ${error.message}`);
+        // Continue with the database deletion even if platform deletions fail
       }
-
-      return this.prisma.post.delete({
-        where: { id }
-      });
-    } catch (error) {
-      this.logger.error(`Failed to delete post ${id}: ${error.message}`);
-      throw error;
     }
+
+    // Delete the post from the database
+    return this.prisma.post.delete({
+      where: { id }
+    });
   }
 }
