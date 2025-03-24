@@ -5,6 +5,7 @@ import { AddPlatformCredentialDto } from './dto/add-platform-credential.dto';
 import { PlatformService } from './services/platform.service';
 import { Platform } from './enums/platform.enum';
 import { OAuthService } from './services/oauth.service';
+import { UpdatePostDto } from './dto/update-post.dto';
 
 @Injectable()
 export class SocialService {
@@ -53,7 +54,7 @@ export class SocialService {
         data: { status: 'published' }
       });
     } catch (error) {
-      this.logger.error(`Failed to publish post ${post.id}: ${error.message}`);
+      this.logger.error(`Failed to publish post ${post.id}: ${JSON.stringify(error.message)}`);
       await this.prisma.post.update({
         where: { id: post.id },
         data: { status: 'failed' }
@@ -85,6 +86,9 @@ export class SocialService {
         platform: credentialDto.platform,
         accessToken: credentialDto.accessToken,
         refreshToken: credentialDto.refreshToken,
+        consumerKey: credentialDto.consumerKey,
+        consumerSecret: credentialDto.consumerSecret,
+        tokenSecret: credentialDto.tokenSecret,
         userId: credentialDto.userId,
       },
     });
@@ -119,5 +123,67 @@ export class SocialService {
     }
 
     return credential;
+  }
+
+  async updatePost(id: string, updatePostDto: UpdatePostDto) {
+    const post = await this.prisma.post.findUnique({
+      where: { id },
+      include: { user: true }
+    });
+
+    if (!post) {
+      throw new NotFoundException(`Post with ID ${id} not found`);
+    }
+
+    try {
+      for (const platform of post.platforms) {
+        await this.platformService.updatePost(
+          platform as Platform,
+          post.id, // Using post.id as identifier instead of platformPostIds
+          updatePostDto.content,
+          updatePostDto.mediaUrl
+        );
+      }
+
+      return this.prisma.post.update({
+        where: { id },
+        data: {
+          content: updatePostDto.content,
+          mediaUrl: updatePostDto.mediaUrl,
+          status: 'updated'
+        },
+        include: { user: true }
+      });
+    } catch (error) {
+      this.logger.error(`Failed to update post ${id}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async deletePost(id: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id },
+      include: { user: true }
+    });
+
+    if (!post) {
+      throw new NotFoundException(`Post with ID ${id} not found`);
+    }
+
+    try {
+      for (const platform of post.platforms) {
+        await this.platformService.deletePost(
+          platform as Platform,
+          post.id // Using post.id as identifier instead of platformPostIds
+        );
+      }
+
+      return this.prisma.post.delete({
+        where: { id }
+      });
+    } catch (error) {
+      this.logger.error(`Failed to delete post ${id}: ${error.message}`);
+      throw error;
+    }
   }
 }

@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Platform } from '../enums/platform.enum';
 import { PrismaService } from '../../prisma/prisma.service';
 import axios from 'axios';
+import * as OAuth from 'oauth-1.0a';
+import { createHmac } from 'crypto';
+import { TwitterApi } from 'twitter-api-v2';
 
 @Injectable()
 export class PlatformService {
@@ -17,7 +20,7 @@ export class PlatformService {
         case Platform.FACEBOOK:
           return await this.postToFacebook(content, credentials, mediaUrl);
         case Platform.TWITTER:
-          return await this.postToTwitter(content, credentials, mediaUrl);
+          return await this.postToTwitter(content, credentials, /* mediaUrl */);
         case Platform.LINKEDIN:
           return await this.postToLinkedIn(content, credentials, mediaUrl);
         case Platform.INSTAGRAM:
@@ -69,13 +72,21 @@ export class PlatformService {
     return axios.post(url, data);
   }
 
-  private async postToTwitter(content: string, credentials: any, mediaUrl?: string) {
-    const url = 'https://api.twitter.com/2/tweets';
-    const data = { text: content };
-    return axios.post(url, data, {
-      headers: { Authorization: `Bearer ${credentials.accessToken}` }
+  private async postToTwitter(content: string, credentials: any) {
+    const client = new TwitterApi({
+      appKey: credentials.consumerKey,
+      appSecret: credentials.consumerSecret,
+      accessToken: credentials.accessToken,
+      accessSecret: credentials.tokenSecret,
     });
-  }
+
+    try {
+      const response = await client.v2.tweet('Hello, Twitter API!');
+      console.log('Tweet posted:', response);
+    } catch (error) {
+      console.error('Error posting tweet:', error);
+    }
+}
 
   private async postToLinkedIn(content: string, credentials: any, mediaUrl?: string) {
     const url = 'https://api.linkedin.com/v2/ugcPosts';
@@ -221,4 +232,89 @@ export class PlatformService {
       headers: { Authorization: `Bearer ${credentials.accessToken}` }
     });
   }
-} 
+
+  async updatePost(platform: Platform, postId: string, content: string, mediaUrl?: string) {
+    try {
+      const credentials = await this.getCredentials(platform);
+      
+      switch (platform) {
+        case Platform.FACEBOOK:
+          return await this.updateFacebookPost(postId, content, credentials, mediaUrl);
+        case Platform.TWITTER:
+          return await this.updateTwitterPost(postId, content, credentials);
+        // Add other platforms as needed
+        default:
+          throw new Error(`Update not implemented for ${platform}`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to update post on ${platform}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async deletePost(platform: Platform, postId: string) {
+    try {
+      const credentials = await this.getCredentials(platform);
+      
+      switch (platform) {
+        case Platform.FACEBOOK:
+          return await this.deleteFacebookPost(postId, credentials);
+        case Platform.TWITTER:
+          return await this.deleteTwitterPost(postId, credentials);
+        // Add other platforms as needed
+        default:
+          throw new Error(`Delete not implemented for ${platform}`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to delete post from ${platform}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  private async updateFacebookPost(postId: string, content: string, credentials: any, mediaUrl?: string) {
+    const url = `https://graph.facebook.com/v18.0/${postId}`;
+    const data = {
+      message: content,
+      ...(mediaUrl && { link: mediaUrl }),
+      access_token: credentials.accessToken,
+    };
+    return axios.post(url, data);
+  }
+
+  private async deleteFacebookPost(postId: string, credentials: any) {
+    const url = `https://graph.facebook.com/v18.0/${postId}`;
+    return axios.delete(url, {
+      params: { access_token: credentials.accessToken }
+    });
+  }
+
+  private async updateTwitterPost(postId: string, content: string, credentials: any) {
+    const client = new TwitterApi({
+      appKey: credentials.consumerKey,
+      appSecret: credentials.consumerSecret,
+      accessToken: credentials.accessToken,
+      accessSecret: credentials.tokenSecret,
+    });
+
+    try {
+      // Note: Twitter API v2 doesn't support updating tweets
+      // We'll need to delete and create a new one
+      await client.v2.delete(postId);
+      return await client.v2.tweet(content);
+    } catch (error) {
+      this.logger.error('Error updating tweet:', error);
+      throw error;
+    }
+  }
+
+  private async deleteTwitterPost(postId: string, credentials: any) {
+    const client = new TwitterApi({
+      appKey: credentials.consumerKey,
+      appSecret: credentials.consumerSecret,
+      accessToken: credentials.accessToken,
+      accessSecret: credentials.tokenSecret,
+    });
+
+    return client.v2.delete(postId);
+  }
+}

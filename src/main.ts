@@ -4,7 +4,9 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule,{
+    logger: ['error', 'warn', 'debug', 'log', 'verbose'],
+  });
   
   // Enable CORS
   app.enableCors();
@@ -12,12 +14,14 @@ async function bootstrap() {
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe());
 
+
+  
   // Swagger setup
   const config = new DocumentBuilder()
     .setTitle('Social Media Management API')
     .setDescription('A social media management API similar to Ayrshare')
     .setVersion('1.0')
-    .addBearerAuth()
+    // .addBearerAuth()
     .build();
     
   const document = SwaggerModule.createDocument(app, config); 

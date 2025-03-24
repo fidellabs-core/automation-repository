@@ -1,9 +1,10 @@
-import { Controller, Post, Body, Get, Param, UseGuards, Query, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, UseGuards, Query, HttpStatus, Delete, Put } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { SocialService } from './social.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { AddPlatformCredentialDto } from './dto/add-platform-credential.dto';
 import { Logger } from '@nestjs/common';
+import { UpdatePostDto } from './dto/update-post.dto';
 
 @ApiTags('Social Media')
 @Controller('social')
@@ -43,9 +44,21 @@ export class SocialController {
     return this.socialService.getPost(id);
   }
 
-  // Remove these endpoints:
-  // - @Get('auth/:platform')
-  // - @Get('auth/:platform/callback')
+  @Put('posts/:id')
+  @ApiOperation({ summary: 'Update a social media post' })
+  async updatePost(
+    @Param('id') id: string,
+    @Body() updatePostDto: UpdatePostDto
+  ) {
+    return this.socialService.updatePost(id, updatePostDto);
+  }
+
+  @Delete('posts/:id')
+  @ApiOperation({ summary: 'Delete a social media post' })
+  async deletePost(@Param('id') id: string) {
+    return this.socialService.deletePost(id);
+  }
+}
 
   // Keep the platform credential endpoints as they are:
   @Post('platform/credential')
@@ -61,7 +74,6 @@ export class SocialController {
     status: 400, 
     description: 'Invalid platform or missing required fields' 
   })
-  addPlatformCredential(@Body() credentialDto: AddPlatformCredentialDto) {
+  async addPlatformCredential(@Body() credentialDto: AddPlatformCredentialDto) {
     return this.socialService.addPlatformCredential(credentialDto);
   }
-}
