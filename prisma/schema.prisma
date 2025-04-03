@@ -32,17 +32,14 @@ model Post {
   updatedAt       DateTime @updatedAt
 }
 
+// Add this to your existing schema.prisma file
 model PlatformCredential {
-  id            String    @id @default(uuid())
-  platform      String
+  id            Int      @id @default(autoincrement())
+  platform      String   @unique
   accessToken   String
-  refreshToken  String?
-  expiresAt     DateTime?
   userId        String
   user          User      @relation(fields: [userId], references: [id])
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  consumerKey    String?
-  consumerSecret String?
-  tokenSecret    String?
+  credentialsData Json?  // This will store the structured platform-specific credentials
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

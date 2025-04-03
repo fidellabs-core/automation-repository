@@ -59,7 +59,59 @@ export class PlatformService {
     if (!credentials) {
       throw new Error(`No credentials found for ${platform}`);
     }
+    
+    // Parse the credentialsData JSON string if it exists
+    if (credentials.credentialsData && typeof credentials.credentialsData === 'string') {
+      try {
+        credentials.credentialsData = JSON.parse(credentials.credentialsData);
+      } catch (error) {
+        this.logger.error(`Failed to parse credentialsData for ${platform}: ${error.message}`);
+        credentials.credentialsData = {};
+      }
+    } else if (!credentials.credentialsData) {
+      credentials.credentialsData = {};
+    }
+    
+    // Validate platform-specific required credentials
+    this.validatePlatformCredentials(platform, credentials);
+    
     return credentials;
+  }
+  
+  private validatePlatformCredentials(platform: Platform, credentials: any) {
+    // Extract credentials from the JSON field as a flat structure
+    const credentialsData = credentials.credentialsData || {};
+    
+    switch (platform) {
+      case Platform.TWITTER:
+        if (!credentialsData.consumerKey || !credentialsData.consumerSecret || 
+            !credentials.accessToken || !credentialsData.tokenSecret) {
+          throw new Error(`Missing required Twitter credentials. Required: consumerKey, consumerSecret, accessToken, tokenSecret`);
+        }
+        break;
+      case Platform.LINKEDIN:
+        if (!credentials.accessToken || !credentialsData.userId) {
+          throw new Error(`Missing required LinkedIn credentials. Required: accessToken, userId`);
+        }
+        break;
+      case Platform.FACEBOOK:
+      case Platform.INSTAGRAM:
+      case Platform.THREADS:
+        if (!credentials.accessToken) {
+          throw new Error(`Missing required ${platform} credentials. Required: accessToken`);
+        }
+        break;
+      case Platform.PINTEREST:
+        if (!credentials.accessToken || !credentialsData.boardId) {
+          throw new Error(`Missing required Pinterest credentials. Required: accessToken, boardId`);
+        }
+        break;
+      // Add other platforms with specific requirements
+      default:
+        if (!credentials.accessToken) {
+          throw new Error(`Missing required ${platform} credentials. Required: accessToken`);
+        }
+    }
   }
 
   private async postToFacebook(content: string, credentials: any, mediaUrl?: string) {
@@ -73,11 +125,13 @@ export class PlatformService {
   }
 
   private async postToTwitter(content: string, credentials: any) {
+    const credentialsData = credentials.credentialsData || {};
+    
     const client = new TwitterApi({
-      appKey: credentials.consumerKey,
-      appSecret: credentials.consumerSecret,
+      appKey: credentialsData.consumerKey,
+      appSecret: credentialsData.consumerSecret,
       accessToken: credentials.accessToken,
-      accessSecret: credentials.tokenSecret,
+      accessSecret: credentialsData.tokenSecret,
     });
 
     try {
@@ -98,22 +152,67 @@ export class PlatformService {
 
 
   private async postToLinkedIn(content: string, credentials: any, mediaUrl?: string) {
-    const url = 'https://api.linkedin.com/v2/ugcPosts';
-    const data = {
-      author: `urn:li:person:${credentials.userId}`,
-      lifecycleState: 'PUBLISHED',
-      specificContent: {
-        'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: content },
-          shareMediaCategory: 'NONE'
+    try {
+      const credentialsData = credentials.credentialsData || {};
+      
+      // Use the userId from credentials data
+      const author = `urn:li:person:${credentialsData.userId}`;
+      
+      this.logger.debug(`LinkedIn post author: ${author}`);
+      
+      const url = 'https://api.linkedin.com/v2/ugcPosts';
+      
+      const data = {
+        author: author,
+        lifecycleState: 'PUBLISHED',
+        specificContent: {
+          'com.linkedin.ugc.ShareContent': {
+            shareCommentary: { text: content },
+            shareMediaCategory: 'NONE'
+          }
+        },
+        visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
+      };
+      
+      // Add media if provided
+      // if (mediaUrl) {
+      //   data.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory = 'ARTICLE';
+      //   data.specificContent['com.linkedin.ugc.ShareContent'].media = [
+      //     {
+      //       status: 'READY',
+      //       description: { text: content },
+      //       originalUrl: mediaUrl
+      //     }
+      //   ];
+      // }
+      
+      this.logger.debug('LinkedIn request payload:', JSON.stringify(data, null, 2));
+      
+      const response = await axios.post(url, data, {
+        headers: { 
+          Authorization: `Bearer ${credentials.accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0'
         }
-      },
-      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' }
-    };
-    return axios.post(url, data, {
-      headers: { Authorization: `Bearer ${credentials.accessToken}` }
-    });
+      });
+      
+      this.logger.debug('LinkedIn post response:', response.data);
+      
+      return {
+        success: true,
+        platformPostId: (response.data as { id: string }).id,
+        data: response.data
+      };
+    } catch (error) {
+      this.logger.error('LinkedIn API error details:', error.response?.data || error.message);
+      if (error.response?.data) {
+        this.logger.error('LinkedIn error status:', error.response.status);
+        this.logger.error('LinkedIn error headers:', error.response.headers);
+      }
+      throw error;
+    }
   }
+  
 
   private async postToInstagram(content: string, credentials: any, mediaUrl?: string) {
     // First create container
@@ -251,6 +350,8 @@ export class PlatformService {
           return await this.updateFacebookPost(postId, content, credentials, mediaUrl);
         case Platform.TWITTER:
           return await this.updateTwitterPost(postId, content, credentials);
+        case Platform.LINKEDIN:
+          return await this.updateLinkedInPost(postId, content, credentials, mediaUrl);
         // Add other platforms as needed
         default:
           throw new Error(`Update not implemented for ${platform}`);
@@ -270,6 +371,8 @@ export class PlatformService {
           return await this.deleteFacebookPost(postId, credentials);
         case Platform.TWITTER:
           return await this.deleteTwitterPost(postId, credentials);
+        case Platform.LINKEDIN:
+          return await this.deleteLinkedInPost(postId, credentials);
         // Add other platforms as needed
         default:
           throw new Error(`Delete not implemented for ${platform}`);
@@ -297,12 +400,74 @@ export class PlatformService {
     });
   }
 
+  private async updateLinkedInPost(postId: string, content: string, credentials: any, mediaUrl?: string) {
+    try {
+      // LinkedIn doesn't support direct updates to posts
+      // We need to delete the old post and create a new one
+      await this.deleteLinkedInPost(postId, credentials);
+      
+      // Create a new post with the updated content
+      const newPost = await this.postToLinkedIn(content, credentials, mediaUrl);
+      
+      this.logger.debug('LinkedIn post updated (deleted and recreated):', newPost);
+      
+      return {
+        success: true,
+        platformPostId: newPost.platformPostId,
+        data: newPost.data
+      };
+    } catch (error) {
+      this.logger.error('Error updating LinkedIn post:', error);
+      throw error;
+    }
+  }
+
+  private async deleteLinkedInPost(postId: string, credentials: any) {
+    try {
+      // LinkedIn post IDs are typically in URN format
+      // If the postId doesn't start with 'urn:li:share:', prepend it
+      const formattedPostId = postId.startsWith('urn:li:') 
+        ? postId 
+        : `urn:li:share:${postId}`;
+      console.log(">>> ")
+      this.logger.debug(`Attempting to delete LinkedIn post with ID: ${formattedPostId}`);
+      
+      const url = `https://api.linkedin.com/v2/ugcPosts/${encodeURIComponent(formattedPostId)}`;
+      
+      const response = await axios.delete(url, {
+        headers: { 
+          Authorization: `Bearer ${credentials.accessToken}`,
+          'X-Restli-Protocol-Version': '2.0.0'
+        }
+      });
+      
+      this.logger.debug('LinkedIn post deletion response:', response.status);
+      
+      return {
+        success: true,
+        data: { status: response.status }
+      };
+    } catch (error) {
+      this.logger.error(`Error deleting LinkedIn post ${postId}:`, error.response?.data || error.message);
+      if (error.response?.status === 404) {
+        // If the post is already deleted or doesn't exist, consider it a success
+        return {
+          success: true,
+          data: { status: 'Post not found or already deleted' }
+        };
+      }
+      throw error;
+    }
+  }
+
   private async updateTwitterPost(postId: string, content: string, credentials: any) {
+    const credentialsData = credentials.credentialsData || {};
+    
     const client = new TwitterApi({
-      appKey: credentials.consumerKey,
-      appSecret: credentials.consumerSecret,
+      appKey: credentialsData.consumerKey,
+      appSecret: credentialsData.consumerSecret,
       accessToken: credentials.accessToken,
-      accessSecret: credentials.tokenSecret,
+      accessSecret: credentialsData.tokenSecret,
     });
 
     try {
@@ -326,11 +491,13 @@ export class PlatformService {
   }
 
   private async deleteTwitterPost(postId: string, credentials: any) {
+    const credentialsData = credentials.credentialsData || {};
+    
     const client = new TwitterApi({
-      appKey: credentials.consumerKey,
-      appSecret: credentials.consumerSecret,
+      appKey: credentialsData.consumerKey,
+      appSecret: credentialsData.consumerSecret,
       accessToken: credentials.accessToken,
-      accessSecret: credentials.tokenSecret,
+      accessSecret: credentialsData.tokenSecret,
     });
 
     try {

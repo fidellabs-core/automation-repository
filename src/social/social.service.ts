@@ -4,7 +4,6 @@ import { CreatePostDto } from './dto/create-post.dto';
 import { AddPlatformCredentialDto } from './dto/add-platform-credential.dto';
 import { PlatformService } from './services/platform.service';
 import { Platform } from './enums/platform.enum';
-import { OAuthService } from './services/oauth.service';
 import { UpdatePostDto } from './dto/update-post.dto';
 
 @Injectable()
@@ -14,7 +13,6 @@ export class SocialService {
   constructor(
     private prisma: PrismaService,
     private platformService: PlatformService,
-    private oauthService: OAuthService
   ) {}
 
   async createPost(createPostDto: CreatePostDto) {
@@ -91,14 +89,14 @@ export class SocialService {
   }
 
   async addPlatformCredential(credentialDto: AddPlatformCredentialDto) {
+    // Use credentialsData directly without nesting under platform name
+    const credentialsData = credentialDto.credentialsData || {};
+    
     return this.prisma.platformCredential.create({
       data: {
         platform: credentialDto.platform,
         accessToken: credentialDto.accessToken,
-        refreshToken: credentialDto.refreshToken,
-        consumerKey: credentialDto.consumerKey,
-        consumerSecret: credentialDto.consumerSecret,
-        tokenSecret: credentialDto.tokenSecret,
+        credentialsData: JSON.stringify(credentialsData),
         userId: credentialDto.userId,
       },
     });
